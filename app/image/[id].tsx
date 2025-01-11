@@ -12,6 +12,7 @@ import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { Share } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -110,14 +111,47 @@ export default function ImageScreen() {
     }
   };
 
-  const handleFavorite = () => {
-    setIsFavorite(!isFavorite);
+  const checkFavorite = async () => {
     try {
-      Haptics?.impactAsync();
+      const storedFavorites = await AsyncStorage.getItem('favorites');
+      if (storedFavorites) {
+        const favorites = JSON.parse(storedFavorites);
+        setIsFavorite(favorites.some((fav: NASAImage) => fav.nasa_id === id));
+      }
     } catch (error) {
-      console.log('Haptics not available');
+      console.error('Error checking favorite:', error);
     }
   };
+
+  const toggleFavorite = async () => {
+    try {
+      const storedFavorites = await AsyncStorage.getItem('favorites');
+      let favorites = storedFavorites ? JSON.parse(storedFavorites) : [];
+      
+      if (isFavorite) {
+        favorites = favorites.filter((fav: NASAImage) => fav.nasa_id !== id);
+      } else {
+        favorites.push({
+          title,
+          nasa_id: id,
+          thumbnailUrl: imageUrl,
+          fullImageUrl,
+          description: '',
+          dateCreated: new Date().toISOString()
+        });
+      }
+      
+      await AsyncStorage.setItem('favorites', JSON.stringify(favorites));
+      setIsFavorite(!isFavorite);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  };
+
+  useEffect(() => {
+    checkFavorite();
+  }, []);
 
   // Animation values
   const scale = useSharedValue(1);
@@ -302,7 +336,7 @@ export default function ImageScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity 
-              onPress={handleFavorite} 
+              onPress={toggleFavorite} 
               style={[styles.topBar, { right: 20, left: undefined, width: 40 }]}
             >
               <FontAwesome 
@@ -342,7 +376,7 @@ export default function ImageScreen() {
 
                 <TouchableOpacity 
                   style={styles.actionButton} 
-                  onPress={handleFavorite}
+                  onPress={toggleFavorite}
                   activeOpacity={0.7}
                 >
                   <View style={styles.actionButtonInner}>

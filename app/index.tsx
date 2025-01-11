@@ -1,10 +1,10 @@
-import { Stack, router } from 'expo-router';
+import { router } from 'expo-router';
 import { StyleSheet, TouchableOpacity, View, TextInput, Image, FlatList, Dimensions, ScrollView, ActivityIndicator } from 'react-native';
 import { Text } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchImage } from '@/api';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 interface NASAImage {
   title: string;
   description: string;
@@ -21,16 +21,20 @@ const CATEGORIES = [
   'Earth', 'Space', 'Mars', 'NASA', 'Galaxy', 'Jupiter', 'Asteroid'
 ];
 
+const TOP_PICK_CATEGORIES = CATEGORIES;
+
 export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [images, setImages] = useState<NASAImage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [topPicks, setTopPicks] = useState<NASAImage[]>([]);
+  const [favorites, setFavorites] = useState<NASAImage[]>([]);
 
   const handleSearch = async (query: string) => {
     if (!query.trim()) return;
     setLoading(true);
     setImages([]);
-    
+
     try {
       await fetchImage(query, (newImage) => {
         setImages(current => [...current, newImage]);
@@ -49,12 +53,12 @@ export default function HomeScreen() {
 
   const renderItem = ({ item }: { item: NASAImage }) => {
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.imageContainer}
         onPress={() => {
           router.push({
             pathname: `/image/${item.nasa_id}`,
-            params: { 
+            params: {
               title: item.title,
               imageUrl: item.thumbnailUrl,
               fullImageUrl: item.fullImageUrl
@@ -71,18 +75,55 @@ export default function HomeScreen() {
     );
   };
 
+  const fetchTopPicks = async () => {
+    setLoading(true);
+    const allPicks: NASAImage[] = [];
+
+    try {
+      for (const category of TOP_PICK_CATEGORIES) {
+        let categoryImages: NASAImage[] = [];
+        await fetchImage(category, (newImage) => {
+          if (categoryImages.length < 3) {
+            categoryImages.push(newImage);
+            if (categoryImages.length === 3) {
+              allPicks.push(...categoryImages);
+              if (allPicks.length === TOP_PICK_CATEGORIES.length * 3) {
+                setTopPicks(allPicks);
+                setLoading(false);
+              }
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching top picks:', error);
+      setLoading(false);
+    }
+  };
+
+  const loadFavorites = async () => {
+    try {
+      const storedFavorites = await AsyncStorage.getItem('favorites');
+      if (storedFavorites) {
+        setFavorites(JSON.parse(storedFavorites));
+      }
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchTopPicks();
+  }, []);
+
+  useEffect(() => {
+    loadFavorites();
+  }, []);
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          headerTitle: "Wallsy",
-          headerTitleStyle: styles.headerTitle,
-          headerShadowVisible: false,
-        }}
-      />
-      
       <View style={styles.searchContainer}>
         <FontAwesome name="search" size={20} color="#666" style={styles.searchIcon} />
+
         <TextInput
           style={styles.searchInput}
           value={searchQuery}
@@ -94,13 +135,13 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.categoriesWrapper}>
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoriesContent}
         >
           {CATEGORIES.map((category) => (
-            <TouchableOpacity 
+            <TouchableOpacity
               key={category}
               style={[
                 styles.categoryButton,
@@ -119,29 +160,63 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      <View style={styles.contentContainer}>
-        <FlatList
-          data={loading ? [] : images}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.nasa_id}
-          numColumns={2}
-          contentContainerStyle={styles.imageGrid}
-          columnWrapperStyle={styles.row}
-          ListEmptyComponent={null}
-        />
-        
-        {loading && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#000" />
-          </View>
-        )}
-        
-        {!loading && images.length === 0 && (
-          <View style={styles.loadingOverlay}>
-            <Text style={styles.emptyText}>No images found</Text>
-          </View>
-        )}
-      </View>
+      <ScrollView style={styles.mainScrollView}>
+        <View style={styles.contentContainer}>
+          {!searchQuery ? (
+            <>
+              {favorites.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>Favorites</Text>
+                  <FlatList
+                    data={favorites}
+                    renderItem={renderItem}
+                    keyExtractor={(item) => item.nasa_id}
+                    numColumns={2}
+                    contentContainerStyle={styles.imageGrid}
+                    columnWrapperStyle={styles.row}
+                    scrollEnabled={false}
+                    nestedScrollEnabled={true}
+                  />
+                </>
+              )}
+              <Text style={styles.sectionTitle}>Featured Images</Text>
+              <FlatList
+                data={loading ? [] : topPicks}
+                renderItem={renderItem}
+                keyExtractor={(item) => item.nasa_id}
+                numColumns={2}
+                contentContainerStyle={styles.imageGrid}
+                columnWrapperStyle={styles.row}
+                scrollEnabled={false}
+                nestedScrollEnabled={true}
+              />
+            </>
+          ) : (
+            <FlatList
+              data={loading ? [] : images}
+              renderItem={renderItem}
+              keyExtractor={(item) => item.nasa_id}
+              numColumns={2}
+              contentContainerStyle={styles.imageGrid}
+              columnWrapperStyle={styles.row}
+              scrollEnabled={false}
+              nestedScrollEnabled={true}
+            />
+          )}
+        </View>
+      </ScrollView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#000" />
+        </View>
+      )}
+
+      {!loading && images.length === 0 && searchQuery && (
+        <View style={styles.loadingOverlay}>
+          <Text style={styles.emptyText}>No images found</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -150,6 +225,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+    paddingTop: 10,
   },
   headerTitle: {
     fontSize: 24,
@@ -246,7 +322,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   contentContainer: {
+    flexGrow: 1,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    color: '#000',
+  },
+  mainScrollView: {
     flex: 1,
-    position: 'relative',
+  },
+  headerContainer: {
+    paddingVertical: 8,
+  },
+  headerLogo: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#000',
+    letterSpacing: -1,
+    lineHeight: 34,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#666',
+    lineHeight: 16,
   },
 });
