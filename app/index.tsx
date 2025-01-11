@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { StyleSheet, TouchableOpacity, View, TextInput, Image, FlatList, Dimensions, ScrollView, ActivityIndicator } from 'react-native';
 import { Text } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchImage } from '@/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 interface NASAImage {
@@ -29,11 +29,17 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [topPicks, setTopPicks] = useState<NASAImage[]>([]);
   const [favorites, setFavorites] = useState<NASAImage[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSearch = async (query: string) => {
-    if (!query.trim()) return;
+  const handleSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setImages([]);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setImages([]);
+    setError(null);
 
     try {
       await fetchImage(query, (newImage) => {
@@ -41,10 +47,19 @@ export default function HomeScreen() {
       });
     } catch (error) {
       console.error('Error fetching images:', error);
+      setError('Unable to fetch images. Please try again later.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      handleSearch(searchQuery);
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, handleSearch]);
 
   const handleCategoryPress = (category: string) => {
     setSearchQuery(category);
@@ -123,15 +138,28 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <View style={styles.searchContainer}>
         <FontAwesome name="search" size={20} color="#666" style={styles.searchIcon} />
-
         <TextInput
           style={styles.searchInput}
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={(text) => {
+            setSearchQuery(text);
+          }}
           placeholder="Search NASA images..."
           placeholderTextColor="#666"
-          onSubmitEditing={() => handleSearch(searchQuery)}
+          returnKeyType="search"
         />
+        {searchQuery.trim() !== '' && (
+          <TouchableOpacity 
+            onPress={() => {
+              setSearchQuery('');
+              setImages([]);
+              setError(null);
+            }}
+            style={styles.clearButton}
+          >
+            <FontAwesome name="times-circle" size={16} color="#666" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.categoriesWrapper}>
@@ -162,7 +190,15 @@ export default function HomeScreen() {
 
       <ScrollView style={styles.mainScrollView}>
         <View style={styles.contentContainer}>
-          {!searchQuery ? (
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#000" />
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : !searchQuery ? (
             <>
               {favorites.length > 0 && (
                 <>
@@ -181,7 +217,7 @@ export default function HomeScreen() {
               )}
               <Text style={styles.sectionTitle}>Featured Images</Text>
               <FlatList
-                data={loading ? [] : topPicks}
+                data={topPicks}
                 renderItem={renderItem}
                 keyExtractor={(item) => item.nasa_id}
                 numColumns={2}
@@ -191,9 +227,13 @@ export default function HomeScreen() {
                 nestedScrollEnabled={true}
               />
             </>
+          ) : images.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No images found</Text>
+            </View>
           ) : (
             <FlatList
-              data={loading ? [] : images}
+              data={images}
               renderItem={renderItem}
               keyExtractor={(item) => item.nasa_id}
               numColumns={2}
@@ -205,18 +245,6 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
-
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#000" />
-        </View>
-      )}
-
-      {!loading && images.length === 0 && searchQuery && (
-        <View style={styles.loadingOverlay}>
-          <Text style={styles.emptyText}>No images found</Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -307,15 +335,12 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    paddingVertical: 40,
+    minHeight: 200,
   },
   emptyText: {
     color: '#666',
@@ -348,5 +373,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     lineHeight: 16,
+  },
+  clearButton: {
+    padding: 8,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+    minHeight: 200,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+    minHeight: 200,
+  },
+  errorText: {
+    color: '#ff3b30',
+    fontSize: 16,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
 });
