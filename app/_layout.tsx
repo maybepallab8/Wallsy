@@ -50,12 +50,8 @@ function RootLayoutNav() {
             options={{
               headerShown: true,
               title: 'Wallsy',
-              headerLargeTitle: true,
               headerStyle: {
                 backgroundColor: '#fff',
-              },
-              headerLargeTitleStyle: {
-                fontSize: 34,
               },
             }}
           />
